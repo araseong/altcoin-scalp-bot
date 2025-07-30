@@ -154,13 +154,25 @@ class TradeEngine:
 
     # ────────────────────────── 헬퍼
     def _spread_ok(self, symbol: str, max_spread=0.0002) -> bool:
-        ob = self.c.client.futures_order_book(symbol=symbol, limit=5)
-        if not ob["bids"] or not ob["asks"]:
-            logging.debug("skip %s: empty order book", symbol)
+        """
+        Best‑bid / best‑ask 만 가져오는 bookTicker 는
+        실제로 거래되는 모든 심볼에 대해 값이 비어 있지 않다.
+        """
+        try:
+            bt = self.c.client.futures_book_ticker(symbol=symbol)
+            bid = float(bt["bidPrice"])
+            ask = float(bt["askPrice"])
+        except Exception as e:
+            logging.debug("skip %s: book_ticker error %s", symbol, e)
             return False
-        bid = float(ob["bids"][0][0])
-        ask = float(ob["asks"][0][0])
+
+        # 0.0 이면 시스템 점검/상폐; 스킵
+        if bid == 0.0 or ask == 0.0:
+            logging.debug("skip %s: bid/ask zero", symbol)
+            return False
+
         return (ask - bid) / bid < max_spread
+
 
     def _vol_ok(self, df: pd.DataFrame) -> bool:
         pct = df.close.pct_change().tail(30).abs()
