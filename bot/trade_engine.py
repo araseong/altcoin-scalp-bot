@@ -165,11 +165,13 @@ class TradeEngine:
     # ────────────────────────────────────────
     # 필터·지표 헬퍼
     # ────────────────────────────────────────
-    def _spread_ok(self, symbol: str, max_spread=0.0002) -> bool:
-        ob = self.c.client.futures_order_book(symbol=symbol, limit=5)
-        if not ob["bids"] or not ob["asks"]:
-            logging.debug("Skip %s: empty order book", symbol)
-            return False
+   def _spread_ok(self, symbol: str, max_spread=0.0002):
+    ob = self.c.client.futures_order_book(symbol=symbol, limit=5)
+
+    if not ob["bids"] or not ob["asks"]:
+        logging.warning("EMPTY %s orderbook raw=%s", symbol, ob)  # ← 추가
+        return False
+
         bid = float(ob["bids"][0][0]); ask = float(ob["asks"][0][0])
         return (ask - bid) / bid < max_spread
 
