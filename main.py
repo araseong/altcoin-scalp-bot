@@ -4,9 +4,8 @@ from datetime import datetime, timezone
 
 from bot.binance_client import BinanceFutures
 from bot.trade_engine import TradeEngine
-
-# ------------ 설정 로드 ------------
-cfg = configparser.ConfigParser()
+import configparser
+cfg = configparser.ConfigParser(inline_comment_prefixes=(';', '#'))
 cfg.read("config.ini")
 
 debug_mode = cfg.getboolean("general", "debug", fallback=False)
