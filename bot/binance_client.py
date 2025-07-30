@@ -6,7 +6,8 @@ class BinanceFutures:
     """USDT‑M 선물 전용 래퍼"""
 
     def __init__(self, api_key: str, api_secret: str, recv_window: int = 5000):
-        self.client = Client(api_key, api_secret, {"recvWindow": recv_window})
+        self.client = Client(api_key, api_secret)
+        self.client.RECV_WINDOW = recv_window
         self.alt_symbols: List[str] = self._load_usdt_m_altcoins()
         self._prec: Dict[str, int] = self._build_price_precision()
 
