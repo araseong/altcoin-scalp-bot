@@ -32,6 +32,19 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
+
+# ── noisy 라이브러리 로거 억제 ─────────────────────────
+for lib in ("urllib3", "binance", "requests"):
+    logging.getLogger(lib).setLevel(logging.WARNING)
+
+# ── 'Skip … low vol_ratio' 줄 숨기기 ──────────────────
+class SkipVolFilter(logging.Filter):
+    def filter(self, record):
+        return "low vol_ratio" not in record.getMessage()
+
+logging.getLogger().addFilter(SkipVolFilter())
+# ------------------------------------------------------
+
 logging.info("=== Bot starting (DEBUG=%s) ===", debug_mode)
 
 # ───────────────────────────────────────────────────────────
