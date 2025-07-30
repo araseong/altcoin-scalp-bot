@@ -3,7 +3,7 @@ import time
 import logging
 import configparser
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 
 from bot.binance_client import BinanceFutures
 from bot.trade_engine import TradeEngine
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     while True:
         try:
             # 세션 필터 : 배제 시간대면 스캔·진입 모두 skip
-            now_utc_hour = datetime.utcnow().hour
+            now_utc_hour = datetime.now(timezone.utc).hour
             sess_start, sess_end = map(int, PARAMS["session_exclude"].split("-"))
             if sess_start <= now_utc_hour <= sess_end:
                 logging.debug("Skip by session_exclude (%02d‑%02d UTC)", sess_start, sess_end)
