@@ -56,44 +56,34 @@ class TradeEngine:
     # ENTRY & EXIT
     # ======================================================
     def _scan_and_enter(self):
-    for sym in self.c.top_alt_movers(limit=60):        # 24h 변동률 상위 60개 풀
-        # ── ①  최근 30분 종가로 변동성 지표 계산
-        df = self._load_klines(sym)
-        closes = df.close.tail(30).tolist()            # 30개(30m) 윈도
-        pct_moves = [abs(closes[i] / closes[i-1] - 1) for i in range(1, len(closes))]
-        vol_ratio = (stdev(pct_moves) / mean(pct_moves)) if mean(pct_moves) else 0
+        for sym in self.c.top_alt_movers(limit=60):        # 24 h 변동률 상위 60개
+            # ① 변동성 계산 (최근 30분)
+            df = self._load_klines(sym)
+            closes = df.close.tail(30).tolist()
+            pct_moves = [abs(closes[i]/closes[i-1]-1) for i in range(1, len(closes))]
+            vol_ratio = (stdev(pct_moves) / mean(pct_moves)) if mean(pct_moves) else 0
 
-        # ── ②  변동성 필터 : vol_ratio ≥ 3  (config 에서 수정 가능)
-        min_vol = float(self.tuning.get("min_vol_ratio", 3))
-        if vol_ratio < min_vol:
-            continue
-
-        # ── ③  기존 entry 조건
-        if entry_signal(df):
-            price = df.close.iloc[-1]
-            qty   = self._position_size(price, sym)
-            if qty <= 0:
+            # ② 변동성 필터
+            min_vol = float(self.tuning.get("min_vol_ratio", 3))
+            if vol_ratio < min_vol:
                 continue
+
+            # ③ 기존 엔트리 조건
+            if entry_signal(df):
+                price = df.close.iloc[-1]
+                qty   = self._position_size(price, sym)
+                if qty <= 0:
+                    continue
 
                 self.c.set_leverage(sym, self.leverage)
                 self.c.open_long(sym, qty)
 
-                sl_price = round(
-                    price * (1 - self.sl_pct), self._prec[sym]
-                )
-                sl = self.c.stop_market(sym, "SELL", qty, sl_price)
+                sl_price = round(price * (1 - self.sl_pct), self._prec[sym])
+                sl_ord   = self.c.stop_market(sym, "SELL", qty, sl_price)
 
-                self.open_symbol, self.stop_order_id = sym, sl["orderId"]
-
-                logging.info(
-                    "OPEN  %s qty=%s @ %.6f | SL=%.6f",
-                    sym,
-                    qty,
-                    price,
-                    sl_price,
-                )
-                break  # 동시 1포지션 규칙
-
+                self.open_symbol, self.stop_order_id = sym, sl_ord["orderId"]
+                logging.info("OPEN  %s qty=%s @ %.6f | SL=%.6f", sym, qty, price, sl_price)
+                break   # 동시 1포지션
     def _monitor_position(self):
         df = self._load_klines(self.open_symbol)
         if exit_signal(df):
