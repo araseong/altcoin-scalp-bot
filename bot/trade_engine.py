@@ -129,27 +129,23 @@ class TradeEngine:
             self._close_position("TP (ATR down)")
 
     def _close_position(self, reason: str):
-        # SL 주문 취소
         try:
             self.c.cancel_order(self.open_symbol, self.stop_order_id)
         except Exception:
             pass
-   
-        # TP 주문들 취소
-        for oid in self.tp_orders.get(self.open_symbol, []):
-            try:
-                self.c.cancel_order(self.open_symbol, oid)
-            except Exception:
-                pass
-   
-        # 포지션 종료
         self.c.close_position(self.open_symbol)
-        logging.info("CLOSE %s  %s", self.open_symbol, reason)
-   
-        # 상태 초기화
-        self.tp_orders.pop(self.open_symbol, None)
-        self.open_symbol, self.stop_order_id = None, None
 
+        # ── PNL·종가 가져오기
+        pos_info  = self.c.client.futures_position_information(symbol=self.open_symbol)[0]
+        pnl       = float(pos_info["unRealizedProfit"])
+        exit_price = float(pos_info["markPrice"])
+
+        logging.info(
+            "CLOSE %s pnl=%.4f usdt exit=%.6f  %s",
+            self.open_symbol, pnl, exit_price, reason
+        )
+
+        self.open_symbol, self.stop_order_id = None, None
     # ────────────────────────────────────────────────────────
     # 헬퍼
     # ────────────────────────────────────────────────────────
