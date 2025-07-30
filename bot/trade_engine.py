@@ -7,6 +7,8 @@ from binance.exceptions import BinanceAPIException
 from .binance_client import BinanceFutures
 from .indicators import add_indicators
 from .strategy import entry_signal, exit_signal
+from statistics import stdev, mean
+
 
 
 class TradeEngine:
@@ -54,15 +56,24 @@ class TradeEngine:
     # ENTRY & EXIT
     # ======================================================
     def _scan_and_enter(self):
-        for sym in self.c.top_alt_movers(limit=40):
-            df = self._load_klines(sym)
-            if entry_signal(df):
-                price = df.close.iloc[-1]
+    for sym in self.c.top_alt_movers(limit=60):        # 24h 변동률 상위 60개 풀
+        # ── ①  최근 30분 종가로 변동성 지표 계산
+        df = self._load_klines(sym)
+        closes = df.close.tail(30).tolist()            # 30개(30m) 윈도
+        pct_moves = [abs(closes[i] / closes[i-1] - 1) for i in range(1, len(closes))]
+        vol_ratio = (stdev(pct_moves) / mean(pct_moves)) if mean(pct_moves) else 0
 
-                qty = self._position_size(price, sym)
-                if qty <= 0:
-                    logging.warning("%s qty too small, skipped", sym)
-                    continue
+        # ── ②  변동성 필터 : vol_ratio ≥ 3  (config 에서 수정 가능)
+        min_vol = float(self.tuning.get("min_vol_ratio", 3))
+        if vol_ratio < min_vol:
+            continue
+
+        # ── ③  기존 entry 조건
+        if entry_signal(df):
+            price = df.close.iloc[-1]
+            qty   = self._position_size(price, sym)
+            if qty <= 0:
+                continue
 
                 self.c.set_leverage(sym, self.leverage)
                 self.c.open_long(sym, qty)
@@ -139,12 +150,18 @@ class TradeEngine:
         return float((Decimal(qty) // step) * step)
 
     def _position_size(self, price: float, symbol: str) -> float:
-        balance = self.c.balance_usdt()
-        notional = balance * self.pos_pct * self.leverage
-        raw_qty = notional / price
-        qty = self._round_qty(symbol, raw_qty)
+    """
+    잔고 * pos_pct * leverage  만큼 실제 포지션 notional 을 맞춰 준다.
+    stepSize 때문에 절삭된 뒤에도 목표 notional 의 97% 이상이 되도록
+    수량을 1 step 씩 올려서 재보정한다.
+    """
+    bal        = self.c.balance_usdt()
+    tgt_notional = bal * self.pos_pct * self.leverage        # 30% * 10배
+    step       = self._lot_step[symbol]
+    qty        = self._round_qty(symbol, tgt_notional / price)
 
-        # 최소 수량이 0이면 0.001 등 stepSize 자체를 최소치로 사용
-        min_qty = float(self._lot_step[symbol])
-        return max(qty, min_qty)
+    # 절삭 때문에 부족하면 step 단위로 늘려서 보정
+    while qty * price < tgt_notional * 0.97:                 # 최대 3 % 오차 허용
+        qty += float(step)
+    return qty
 
