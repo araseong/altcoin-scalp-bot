@@ -1,4 +1,6 @@
+import sys                     # ← 콘솔 출력용
 import time, logging, configparser
+
 from bot.binance_client import BinanceFutures
 from bot.trade_engine import TradeEngine
 
@@ -6,18 +8,24 @@ from bot.trade_engine import TradeEngine
 cfg = configparser.ConfigParser()
 cfg.read("config.ini")
 
+# ------------ 로깅 설정 ------------
 logging.basicConfig(
-    filename="bot.log",
-    level=logging.INFO,
+    level=logging.INFO,                             # DEBUG 로 바꾸면 더 자세함
     format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log"),             # 파일 저장
+        logging.StreamHandler(sys.stdout)           # 콘솔에도 즉시 출력
+    ]
 )
 
+# ------------ Binance 클라이언트 ------------
 client = BinanceFutures(
     api_key     = cfg["binance"]["api_key"],
     api_secret  = cfg["binance"]["api_secret"],
     recv_window = int(cfg["binance"].get("recv_window", 5000)),
 )
 
+# ------------ 트레이드 엔진 ------------
 engine = TradeEngine(
     client     = client,
     interval   = cfg["trade"]["base_interval"],
