@@ -46,6 +46,8 @@ class TradeEngine:
         # tuning 파라미터 dict 를 외부(main.py) 에서 주입
         self.tuning: dict = {}
 
+        self.tp_orders = {}   # {symbol: [orderId_low, orderId_mid]}
+
         logging.info(
             "=== Engine init. leverage=%s pos_pct=%s sl_pct=%s ===",
             leverage,
@@ -90,22 +92,33 @@ class TradeEngine:
                 qty = self._position_size(price, sym)
                 if qty <= 0:
                     continue
-
+    
                 self.c.set_leverage(sym, self.leverage)
                 self.c.open_long(sym, qty)
-
+    
                 sl_price = round(price * (1 - self.sl_pct), self._prec[sym])
                 sl_ord = self.c.stop_market(sym, "SELL", qty, sl_price)
-
+    
+                # TP 주문 추가 (break 전에 실행)
+                tp1_price = round(price * (1 + 0.3 * df.atr.iloc[-1] / price), self._prec[sym])
+                tp2_price = round(price * (1 + 0.6 * df.atr.iloc[-1] / price), self._prec[sym])
+    
+                tp1 = self.c.client.futures_create_order(
+                    symbol=sym, side="SELL", type="LIMIT", quantity=qty * 0.30,
+                    price=tp1_price, timeInForce="GTC")
+                tp2 = self.c.client.futures_create_order(
+                    symbol=sym, side="SELL", type="LIMIT", quantity=qty * 0.30,
+                    price=tp2_price, timeInForce="GTC")
+    
+                self.tp_orders[sym] = [tp1["orderId"], tp2["orderId"]]
+    
                 self.open_symbol, self.stop_order_id = sym, sl_ord["orderId"]
                 logging.info(
-                    "OPEN  %s qty=%s @ %.6f | SL=%.6f",
-                    sym,
-                    qty,
-                    price,
-                    sl_price,
-                )
-                break  # 동시 1포지션
+                    "OPEN  %s qty=%s @ %.6f | SL=%.6f | TP1=%.6f | TP2=%.6f",
+                    sym, qty, price, sl_price, tp1_price, tp2_price
+            )
+            break  # 동시 1포지션
+
 
     # ────────────────────────────────────────────────────────
     # 포지션 모니터
@@ -116,12 +129,25 @@ class TradeEngine:
             self._close_position("TP (ATR down)")
 
     def _close_position(self, reason: str):
+        # SL 주문 취소
         try:
             self.c.cancel_order(self.open_symbol, self.stop_order_id)
         except Exception:
             pass
+   
+        # TP 주문들 취소
+        for oid in self.tp_orders.get(self.open_symbol, []):
+            try:
+                self.c.cancel_order(self.open_symbol, oid)
+            except Exception:
+                pass
+   
+        # 포지션 종료
         self.c.close_position(self.open_symbol)
         logging.info("CLOSE %s  %s", self.open_symbol, reason)
+   
+        # 상태 초기화
+        self.tp_orders.pop(self.open_symbol, None)
         self.open_symbol, self.stop_order_id = None, None
 
     # ────────────────────────────────────────────────────────
