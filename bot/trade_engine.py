@@ -154,23 +154,21 @@ class TradeEngine:
 
     # ────────────────────────── 헬퍼
     def _spread_ok(self, symbol: str, max_spread=0.0002) -> bool:
-        """
-        Best‑bid / best‑ask 만 가져오는 bookTicker 는
-        실제로 거래되는 모든 심볼에 대해 값이 비어 있지 않다.
-        """
         try:
-            bt = self.c.client.futures_book_ticker(symbol=symbol)
-            bid = float(bt["bidPrice"])
-            ask = float(bt["askPrice"])
+            # ── python-binance 1.0.19+ (sync)
+            bt = self.c.client.futures_ticker_bookTicker(symbol=symbol)
+        except AttributeError:
+            # ── 구버전: book_ticker 없음 → REST 직접 호출
+            bt = self.c.client._request_futures_api(
+                "get", "ticker/bookTicker", signed=False, params={"symbol": symbol}
+            )
         except Exception as e:
             logging.debug("skip %s: book_ticker error %s", symbol, e)
             return False
 
-        # 0.0 이면 시스템 점검/상폐; 스킵
+        bid = float(bt.get("bidPrice", 0)); ask = float(bt.get("askPrice", 0))
         if bid == 0.0 or ask == 0.0:
-            logging.debug("skip %s: bid/ask zero", symbol)
             return False
-
         return (ask - bid) / bid < max_spread
 
 
