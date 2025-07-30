@@ -1,0 +1,6 @@
+# 민감‧불필요 파일
+config.ini
+*.env
+__pycache__/
+*.py[cod]
+.venv/
