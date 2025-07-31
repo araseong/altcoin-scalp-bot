@@ -1,15 +1,14 @@
+import numpy as np
 import pandas as pd
-import ta
+
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    # 가격형 컬럼 float 변환 등 기존 코드 …
-
-    # EMA 9 / 26 / 50
+    # EMA 9 / 26 / 50
     df["ema_fast"] = df.close.ewm(span=9, adjust=False).mean()
     df["ema_mid"]  = df.close.ewm(span=26, adjust=False).mean()
     df["ema_slow"] = df.close.ewm(span=50, adjust=False).mean()
 
-    # VWAP (HLC3)
+    # VWAP
     hlc3 = (df.high + df.low + df.close) / 3
     df["vwap"] = (hlc3 * df.volume).cumsum() / df.volume.cumsum()
 
@@ -32,9 +31,8 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
           (df.high - df.low + 1e-8)
     df["acdist"] = (mfm * df.volume).cumsum()
 
-    # 지수평균(EMA9) – 상관계수용
+    # EMA9 (노이즈 완화)
     df["obv_ema"]    = df.obv.ewm(span=9, adjust=False).mean()
     df["acdist_ema"] = df.acdist.ewm(span=9, adjust=False).mean()
 
     return df
-
