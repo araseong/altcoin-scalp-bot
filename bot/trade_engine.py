@@ -188,7 +188,7 @@ class TradeEngine:
         mu = pct.mean()
         sigma = pct.std()
         vol_ratio = sigma / (mu or 1e-8)
-        min_vol = float(self.tuning.get("min_vol_ratio", 2.0))
+        min_vol = float(self.tuning.get("min_vol_ratio", 1.0))
         if vol_ratio < min_vol:
             if symbol:
                 logging.debug("%s vol_ratio=%.2f FAIL", symbol, vol_ratio)
