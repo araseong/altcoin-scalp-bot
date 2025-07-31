@@ -1,27 +1,40 @@
 import pandas as pd
 import ta
 
-def add_indicators(df: pd.DataFrame, atr_window: int = 14) -> pd.DataFrame:
-    # EMA(9·26·55)
-    df["ema_fast"] = ta.trend.ema_indicator(df.close, 9)
-    df["ema_mid"]  = ta.trend.ema_indicator(df.close, 26)
-    df["ema_slow"] = ta.trend.ema_indicator(df.close, 55)
+def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    # 가격형 컬럼 float 변환 등 기존 코드 …
 
-    # ATR
-    df["atr"] = ta.volatility.AverageTrueRange(
-        df.high, df.low, df.close, window=atr_window
-    ).average_true_range()
+    # EMA 9 / 26 / 50
+    df["ema_fast"] = df.close.ewm(span=9, adjust=False).mean()
+    df["ema_mid"]  = df.close.ewm(span=26, adjust=False).mean()
+    df["ema_slow"] = df.close.ewm(span=50, adjust=False).mean()
+
+    # VWAP (HLC3)
+    hlc3 = (df.high + df.low + df.close) / 3
+    df["vwap"] = (hlc3 * df.volume).cumsum() / df.volume.cumsum()
+
+    # DMI (+DI / –DI)
+    up  = df.high.diff()
+    dn  = -df.low.diff()
+    plus  = up.where((up > dn) & (up > 0), 0.0)
+    minus = dn.where((dn > up) & (dn > 0), 0.0)
+    tr = (df.high.combine(df.close.shift(), max) -
+          df.low.combine(df.close.shift(), min)).rolling(14).sum()
+    df["di_plus"]  = 100 * plus.rolling(14).sum()  / tr
+    df["di_minus"] = 100 * minus.rolling(14).sum() / tr
 
     # OBV
-    df["obv"] = ta.volume.on_balance_volume(df.close, df.volume)
+    direction = np.sign(df.close.diff().fillna(0))
+    df["obv"] = (df.volume * direction).cumsum()
 
-    # DMI(+DI·–DI)
-    dmi = ta.trend.ADXIndicator(df.high, df.low, df.close, window=14)
-    df["plus_di"]  = dmi.adx_pos()
-    df["minus_di"] = dmi.adx_neg()
+    # Accumulation/Distribution
+    mfm = ((df.close - df.low) - (df.high - df.close)) / \
+          (df.high - df.low + 1e-8)
+    df["acdist"] = (mfm * df.volume).cumsum()
 
-    # VWAP (누적식)
-    tp = (df.high + df.low + df.close) / 3
-    df["vwap"] = (tp * df.volume).cumsum() / df.volume.cumsum()
+    # 지수평균(EMA9) – 상관계수용
+    df["obv_ema"]    = df.obv.ewm(span=9, adjust=False).mean()
+    df["acdist_ema"] = df.acdist.ewm(span=9, adjust=False).mean()
 
     return df
+

@@ -1,49 +1,44 @@
 import pandas as pd
+import numpy as np
 
-# ──────────────────────────────────────────
-# 진입 조건 ① : EMA 역→정배열 전환 + VWAP 상향 돌파 + +DI 우세
-# ──────────────────────────────────────────
+
+# ─────────────────────────────────────────────
+# 1) EMA 3선 정배열 + +DI 우세
+# ─────────────────────────────────────────────
 def ema_vwap_di_signal(df: pd.DataFrame) -> bool:
-    if len(df) < 5:
+    """EMA(9, 26, 50) 정배열 ‑ VWAP 위 ‑ +DI > ‑DI"""
+    c = df.iloc[-1]
+    ema_fast, ema_mid, ema_slow = c.ema_fast, c.ema_mid, c.ema_slow
+    if not (ema_fast > ema_mid > ema_slow):
         return False
-
-    c0, c1 = df.iloc[-1], df.iloc[-2]
-
-    was_bear = not (c1.ema_fast > c1.ema_mid > c1.ema_slow)
-    is_bull  =     c0.ema_fast > c0.ema_mid > c0.ema_slow
-    if not (was_bear and is_bull):
+    if c.close < c.vwap:
         return False
-
-    if not (c1.close < c1.vwap and c0.close > c0.vwap):
+    if c.di_plus <= c.di_minus:
         return False
-
-    if c0.plus_di <= c0.minus_di:
-        return False
-
     return True
 
 
-# ──────────────────────────────────────────
-# 진입 조건 ② : OBV·ATR 동반 상승 (lookback N 봉)
-# ──────────────────────────────────────────
-def obv_atr_rising(df: pd.DataFrame, lookback: int = 5) -> bool:
-    if len(df) < lookback + 1:
+# ─────────────────────────────────────────────
+# 2) OBV‑Accum/Dist 지수 상관계수
+#    BULL : ρ ≥ +0.8 & 양쪽 ↑
+# ─────────────────────────────────────────────
+def obv_acdist_trend(df: pd.DataFrame, window: int = 30) -> bool:
+    obv_ema = df.obv_ema.tail(window)
+    ad_ema  = df.acdist_ema.tail(window)
+    if len(obv_ema) < window:
         return False
 
-    obv_ser = df.obv.tail(lookback + 1)
-    atr_ser = df.atr.tail(lookback + 1)
+    rho = obv_ema.corr(ad_ema, method="spearman")
+    grad_obv = np.polyfit(range(window), obv_ema.values, 1)[0]
+    grad_ad  = np.polyfit(range(window), ad_ema.values, 1)[0]
 
-    return obv_ser.is_monotonic_increasing and atr_ser.is_monotonic_increasing
+    return rho >= 0.8 and grad_obv > 0 and grad_ad > 0
 
 
-# ──────────────────────────────────────────
-# 손절(Exit) 조건 : OBV & +DI 동시 하락
-# ──────────────────────────────────────────
-def exit_signal(df: pd.DataFrame, lookback: int = 3) -> bool:
-    if len(df) < lookback + 1:
-        return False
-
-    obv_diff = df.obv.diff().tail(lookback)
-    di_diff  = df.plus_di.diff().tail(lookback)
-
-    return obv_diff.lt(0).all() and di_diff.lt(0).all()
+# ─────────────────────────────────────────────
+# 3) 청산 : OBV & +DI 동시 하락
+# ─────────────────────────────────────────────
+def exit_signal(df: pd.DataFrame) -> bool:
+    """직전 3봉 연속 OBV·+DI 하락 → 추세 약화"""
+    s = df.tail(3)
+    return s.obv.diff().lt(0).all() and s.di_plus.diff().lt(0).all()
