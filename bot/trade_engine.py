@@ -17,9 +17,9 @@ from .strategy import (
 
 class TradeEngine:
     """
-    • 24 h 변동률 상위 60개 알트 스캔
+    • 24 h 변동률 상위 60개 알트 스캔
     • EMA+VWAP+DI 전환 ∩ OBV·ATR 상승 → Long
-    • SL: 진입가‑2 %, TP: +0.6·1.2 ATR 분할
+    • SL: 진입가‑2 %, TP: +0.6·1.2 ATR 분할
     • 손절: OBV & +DI 동시 하락
     • 동시 1포지션
     """
@@ -65,6 +65,10 @@ class TradeEngine:
 
     # ────────────────────────── 진입 스캔
     def _scan_and_enter(self):
+        # 루프 카운터 추가
+        self.iter = getattr(self, "iter", 0) + 1
+        logging.debug("LOOP #%s  %s", self.iter, pd.Timestamp.utcnow())
+        
         look = int(self.tuning.get("lookback_obv_atr", 5))
         movers = self.c.top_alt_movers(limit=60)
         if not movers:
@@ -72,7 +76,9 @@ class TradeEngine:
             return
 
         for sym in movers:
-            if not self._spread_ok(sym, 0.0002):
+            # spread 필터
+            if not self._spread_ok(sym, 0.0004):                  # 0.0004 로 약간 완화
+                logging.debug("%s spread FAIL", sym)
                 continue
 
             df = self._load_klines(sym)
@@ -80,10 +86,15 @@ class TradeEngine:
                 logging.debug("skip %s: empty klines", sym)
                 continue
 
-            if not self._vol_ok(df):
-                continue
+            # 변동성 필터
+            if not self._vol_ok(df, sym):                         # sym 전달
+                continue                                          # *vol*ok 안에서 FAIL 찍음
 
-            if not (ema_vwap_di_signal(df) and obv_atr_rising(df, look)):
+            # 전략 조건 체크
+            cond1 = ema_vwap_di_signal(df)
+            cond2 = obv_atr_rising(df, look)
+            logging.debug("%s cond1=%s cond2=%s", sym, cond1, cond2)
+            if not (cond1 and cond2):
                 continue
 
             price = df.close.iloc[-1]
@@ -172,14 +183,17 @@ class TradeEngine:
         return (ask - bid) / bid < max_spread
 
 
-    def _vol_ok(self, df: pd.DataFrame) -> bool:
+    def _vol_ok(self, df: pd.DataFrame, symbol: str = None) -> bool:
         pct = df.close.pct_change().tail(30).abs()
         mu = pct.mean()
         sigma = pct.std()
         vol_ratio = sigma / (mu or 1e-8)
         min_vol = float(self.tuning.get("min_vol_ratio", 2.0))
         if vol_ratio < min_vol:
-            logging.debug("skip low vol_ratio %.2f", vol_ratio)
+            if symbol:
+                logging.debug("%s vol_ratio=%.2f FAIL", symbol, vol_ratio)
+            else:
+                logging.debug("skip low vol_ratio %.2f", vol_ratio)
             return False
         return True
 
