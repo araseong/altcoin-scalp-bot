@@ -1,36 +1,43 @@
-import numpy as np
+"""
+전략 진입·청산 조건 모음
+────────────────────────────────────────────────────────
+"""
 import pandas as pd
+from configparser import SectionProxy
+from .indicators import add_squeeze_ind, volume_profile, rsi
 
 
-# ── 1) EMA 정배열 + +DI 우세 + VWAP 위  ──
-def ema_vwap_di_signal(df: pd.DataFrame) -> bool:
-    c = df.iloc[-1]
-    if not (c.ema_fast > c.ema_mid > c.ema_slow):
-        return False
-    if c.close < c.vwap:                      # 종가가 VWAP 아래면 패스
-        return False
-    if c.di_plus <= c.di_minus:              # +DI 가 –DI 보다 커야
-        return False
-    return True
+def squeeze_long_trigger(df: pd.DataFrame,
+                         s_cfg: SectionProxy) -> bool:
+    """
+    진입 조건:
+      1) N 봉 연속 squeeze 상태였다가 바로 해제
+      2) 현재 종가가 VAH(거래량 프로파일 상단) 돌파
+      3) RSI ≥ rsi_trigger
+    """
+    add_squeeze_ind(df,
+                    bb_window=s_cfg.getint("bb_window"),
+                    kc_window=s_cfg.getint("kc_window"),
+                    kc_mult  =s_cfg.getfloat("kc_mult"))
+
+    n = s_cfg.getint("squeeze_min")
+    squeeze_seq   = df.squeeze_on.rolling(n).apply(all)
+    just_released = (squeeze_seq.shift(1) > 0) & (~df.squeeze_on)
+
+    vah = volume_profile(df,
+                         lookback=s_cfg.getint("vah_lookback"))
+    price   = df.close.iloc[-1]
+
+    df["rsi"] = rsi(df.close, s_cfg.getint("rsi_window"))
+
+    return bool(just_released.iloc[-1]
+                and price > vah
+                and df.rsi.iloc[-1] >= s_cfg.getint("rsi_trigger"))
 
 
-# ── 2) OBV·A/D 60 봉 동조 추세 ──────────────
-def obv_acdist_trend(df: pd.DataFrame,
-                     win: int = 60,
-                     rho_th: float = 0.7) -> bool:
-    obv = df.obv.ewm(span=9, adjust=False).mean().tail(win)
-    ad  = df.acdist.ewm(span=9, adjust=False).mean().tail(win)
-    if len(obv) < win:
-        return False
-
-    rho = obv.corr(ad, method="spearman")         # 상관계수
-    beta_obv = np.polyfit(range(win), obv.values, 1)[0]
-    beta_ad  = np.polyfit(range(win), ad.values, 1)[0]
-
-    return rho >= rho_th and beta_obv > 0 and beta_ad > 0
-
-
-# ── 3) 청산 조건 ─────────────────────────────
-def exit_signal(df: pd.DataFrame) -> bool:
-    s = df.tail(3)
-    return s.obv.diff().lt(0).all() and s.di_plus.diff().lt(0).all()
+def exit_rsi_reversal(df: pd.DataFrame,
+                      window: int = 14) -> bool:
+    """RSI 가 과열권(>70) → 50 미만 급락 = 청산"""
+    cur  = rsi(df.close, window).iloc[-1]
+    prev = rsi(df.close, window).iloc[-2]
+    return prev > 70 and cur < 50
